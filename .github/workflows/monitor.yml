@@ -2,9 +2,8 @@ name: Price Monitor
 
 on:
   schedule:
-    # 每 5 分钟运行一次
     - cron: '*/5 * * * *'
-  workflow_dispatch: # 允许手动点击运行
+  workflow_dispatch:
 
 jobs:
   check-price:
@@ -17,8 +16,10 @@ jobs:
         with:
           python-version: '3.9'
           
-      - name: Install requests
-        run: pip install requests
-        
+      - name: Install dependencies
+        run: |
+          pip install requests
+          pip install cloudscraper
+          
       - name: Run Monitor Script
         run: python main.py
