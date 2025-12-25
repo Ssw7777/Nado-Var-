@@ -1,0 +1,24 @@
+name: Price Monitor
+
+on:
+  schedule:
+    # 每 5 分钟运行一次
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  check-price:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install requests
+        run: pip install requests
+        
+      - name: Run Monitor Script
+        run: python main.py
