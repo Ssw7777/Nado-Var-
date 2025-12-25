@@ -1,6 +1,5 @@
 import requests
-import cloudscraper # 引入核武器
-import json
+from curl_cffi import requests as crequests # 引入新武器
 import time
 
 # ==================== 配置区域 ====================
@@ -22,12 +21,10 @@ def send_alert(text):
         print(f"❌ 推送失败: {e}")
 
 def get_nado_price():
+    # Nado 已经成功了，保持逻辑不变
     url = "https://archive.prod.nado.xyz/v2/tickers"
     try:
-        # Nado 能抓到数据，用 requests 就够了
         resp = requests.get(url, timeout=10).json()
-        
-        # 提取 value 数据
         data_list = []
         if isinstance(resp, dict):
             data_list = list(resp.values())
@@ -36,30 +33,13 @@ def get_nado_price():
             
         for item in data_list:
             if not isinstance(item, dict): continue
-            
-            # 兼容各种 ID 写法
             tid = str(item.get('tickerId') or item.get('ticker_id') or item.get('symbol') or '').upper()
-            
-            # 只要包含 BTC
             if 'BTC' in tid:
-                # 穷举所有可能的价格字段名
-                candidates = [
-                    'markPrice', 'mark_price', 
-                    'lastPrice', 'last_price', 
-                    'oraclePrice', 'oracle_price',
-                    'indexPrice', 'index_price',
-                    'price'
-                ]
-                
-                for key in candidates:
-                    if key in item and item[key]:
-                        print(f"✅ Nado 成功 (字段名 {key}): {item[key]}")
-                        return float(item[key])
-                        
-                # 如果代码跑到这里，说明找到了 BTC 但没找到价格，打印出来看看
-                print(f"⚠️ Nado 找到了BTC但没找到价格字段，keys: {list(item.keys())}")
-                
-        print(f"⚠️ Nado 遍历结束未找到目标")
+                # 之前日志显示字段名是 last_price
+                price = item.get('last_price') or item.get('lastPrice') or item.get('markPrice')
+                if price:
+                    print(f"✅ Nado 获取成功: {price}")
+                    return float(price)
         return None
     except Exception as e:
         print(f"❌ Nado 出错: {e}")
@@ -78,18 +58,19 @@ def get_variational_price():
     }
     
     try:
-        # 启用 cloudscraper 绕过 403
-        scraper = cloudscraper.create_scraper()
-        resp = scraper.post(url, json=payload, timeout=15)
+        # 使用 curl_cffi 模拟 Chrome 浏览器指纹
+        # impersonate="chrome110" 是关键
+        resp = crequests.post(url, json=payload, impersonate="chrome110", timeout=15)
         
         if resp.status_code != 200:
             print(f"⚠️ Variational 状态码: {resp.status_code}")
-            print(f"网页内容预览: {resp.text[:100]}")
             return None
             
         data = resp.json()
         if 'mark_price' in data:
-            return float(data['mark_price'])
+            price = float(data['mark_price'])
+            print(f"✅ Variational 获取成功: {price}")
+            return price
         else:
             print(f"⚠️ Variational 数据异常: {str(data)[:100]}")
             return None
@@ -98,13 +79,10 @@ def get_variational_price():
         return None
 
 def main():
-    print("=== 🚀 启动终极方案 (Cloudscraper) ===")
+    print("=== 🚀 启动指纹伪装方案 (curl_cffi) ===")
     p_nado = get_nado_price()
     p_var = get_variational_price()
     
-    print(f"Nado: {p_nado}")
-    print(f"Variational: {p_var}")
-
     if p_nado and p_var:
         diff = p_nado - p_var
         abs_diff = abs(diff)
