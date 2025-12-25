@@ -1,5 +1,5 @@
 import requests
-from curl_cffi import requests as crequests # 引入新武器
+from curl_cffi import requests as crequests 
 import time
 
 # ==================== 配置区域 ====================
@@ -12,6 +12,14 @@ ALERT_DIFF = 0
 
 # ================================================
 
+# 关键：必须带上这些身份证明，否则必报 403
+HEADERS = {
+    "Origin": "https://omni.variational.io",
+    "Referer": "https://omni.variational.io/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Content-Type": "application/json"
+}
+
 def send_alert(text):
     try:
         url = f"{NOTIFY_URL}价差监控/{text}"
@@ -21,9 +29,9 @@ def send_alert(text):
         print(f"❌ 推送失败: {e}")
 
 def get_nado_price():
-    # Nado 已经成功了，保持逻辑不变
     url = "https://archive.prod.nado.xyz/v2/tickers"
     try:
+        # Nado 已经稳了，用最简单的 requests 即可
         resp = requests.get(url, timeout=10).json()
         data_list = []
         if isinstance(resp, dict):
@@ -35,7 +43,7 @@ def get_nado_price():
             if not isinstance(item, dict): continue
             tid = str(item.get('tickerId') or item.get('ticker_id') or item.get('symbol') or '').upper()
             if 'BTC' in tid:
-                # 之前日志显示字段名是 last_price
+                # 之前日志验证过 last_price 是对的
                 price = item.get('last_price') or item.get('lastPrice') or item.get('markPrice')
                 if price:
                     print(f"✅ Nado 获取成功: {price}")
@@ -58,12 +66,21 @@ def get_variational_price():
     }
     
     try:
-        # 使用 curl_cffi 模拟 Chrome 浏览器指纹
-        # impersonate="chrome110" 是关键
-        resp = crequests.post(url, json=payload, impersonate="chrome110", timeout=15)
+        # ⚠️ 这里的改动是关键：
+        # 1. 用了 chrome120 指纹
+        # 2. 加上了 headers (Origin/Referer)
+        resp = crequests.post(
+            url, 
+            json=payload, 
+            headers=HEADERS, 
+            impersonate="chrome120", 
+            timeout=15
+        )
         
         if resp.status_code != 200:
             print(f"⚠️ Variational 状态码: {resp.status_code}")
+            # 打印一下返回内容，死也要死个明白
+            print(f"错误内容: {resp.text[:200]}")
             return None
             
         data = resp.json()
@@ -79,7 +96,7 @@ def get_variational_price():
         return None
 
 def main():
-    print("=== 🚀 启动指纹伪装方案 (curl_cffi) ===")
+    print("=== 🚀 终极修正版 (指纹+Header) ===")
     p_nado = get_nado_price()
     p_var = get_variational_price()
     
@@ -92,7 +109,7 @@ def main():
             msg = f"价差{abs_diff:.1f} (N:{p_nado:.0f}, V:{p_var:.0f})"
             send_alert(msg)
     else:
-        print("❌ 依然有失败项，请检查上方日志")
+        print("❌ 依然有失败项，请检查日志")
 
 if __name__ == "__main__":
     main()
