@@ -18,8 +18,8 @@ jobs:
           
       - name: Install dependencies
         run: |
-          pip install requests
-          pip install curl_cffi
+          pip install requests playwright
+          playwright install chromium
           
       - name: Run Monitor Script
         run: python main.py
