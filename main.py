@@ -1,115 +1,96 @@
 import requests
-from curl_cffi import requests as crequests 
 import time
+from playwright.sync_api import sync_playwright
 
 # ==================== 配置区域 ====================
-
-# 1. 你的 Bark 推送链接
-NOTIFY_URL = "https://api.day.app/LXJuzuCcmf3aR3QP56Ez4o/" 
-
-# 2. 报警价差 (建议先设为 0 测试)
-ALERT_DIFF = 0
-
+BARK_URL = "https://api.day.app/LXJuzuCcmf3aR3QP56Ez4o/" 
+ALERT_DIFF = 0 # 建议先设0测试
 # ================================================
 
-# 关键：必须带上这些身份证明，否则必报 403
-HEADERS = {
-    "Origin": "https://omni.variational.io",
-    "Referer": "https://omni.variational.io/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Content-Type": "application/json"
-}
-
-def send_alert(text):
+def send_bark(text):
     try:
-        url = f"{NOTIFY_URL}价差监控/{text}"
+        url = f"{BARK_URL}价差监控/{text}"
         requests.get(url, timeout=5)
-        print(f"✅ 已推送通知: {text}")
-    except Exception as e:
-        print(f"❌ 推送失败: {e}")
+        print(f"✅ Bark 推送: {text}")
+    except:
+        pass
 
 def get_nado_price():
-    url = "https://archive.prod.nado.xyz/v2/tickers"
+    # Nado 保持原样，它是好的
     try:
-        # Nado 已经稳了，用最简单的 requests 即可
+        url = "https://archive.prod.nado.xyz/v2/tickers"
         resp = requests.get(url, timeout=10).json()
-        data_list = []
-        if isinstance(resp, dict):
-            data_list = list(resp.values())
-        elif isinstance(resp, list):
-            data_list = resp
-            
-        for item in data_list:
+        data = list(resp.values()) if isinstance(resp, dict) else resp
+        for item in data:
             if not isinstance(item, dict): continue
             tid = str(item.get('tickerId') or item.get('ticker_id') or item.get('symbol') or '').upper()
             if 'BTC' in tid:
-                # 之前日志验证过 last_price 是对的
-                price = item.get('last_price') or item.get('lastPrice') or item.get('markPrice')
-                if price:
-                    print(f"✅ Nado 获取成功: {price}")
-                    return float(price)
-        return None
+                p = item.get('last_price') or item.get('markPrice')
+                if p: 
+                    print(f"✅ Nado: {p}")
+                    return float(p)
     except Exception as e:
-        print(f"❌ Nado 出错: {e}")
-        return None
+        print(f"❌ Nado错: {e}")
+    return None
 
 def get_variational_price():
-    url = "https://omni.variational.io/api/quotes/indicative"
-    payload = {
-        "instrument": {
-            "underlying": "BTC",
-            "funding_interval_s": 3600,
-            "settlement_asset": "USDC",
-            "instrument_type": "perpetual_future"
-        },
-        "qty": "0.0001" 
-    }
+    print("⏳ 正在启动浏览器抓取 Variational...")
+    price = None
     
     try:
-        # ⚠️ 这里的改动是关键：
-        # 1. 用了 chrome120 指纹
-        # 2. 加上了 headers (Origin/Referer)
-        resp = crequests.post(
-            url, 
-            json=payload, 
-            headers=HEADERS, 
-            impersonate="chrome120", 
-            timeout=15
-        )
-        
-        if resp.status_code != 200:
-            print(f"⚠️ Variational 状态码: {resp.status_code}")
-            # 打印一下返回内容，死也要死个明白
-            print(f"错误内容: {resp.text[:200]}")
-            return None
+        with sync_playwright() as p:
+            # 启动一个无头 Chrome 浏览器
+            browser = p.chromium.launch(headless=True)
+            # 伪装一下 UserAgent
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
+
+            # 监听网络请求 (这是最骚的操作)
+            # 我们不看网页长啥样，直接截获它发给后台的秘密数据包
+            def handle_response(response):
+                nonlocal price
+                # 只要链接里包含 quotes/indicative 且是成功的
+                if "quotes/indicative" in response.url and response.status == 200:
+                    try:
+                        data = response.json()
+                        if "mark_price" in data:
+                            price = float(data["mark_price"])
+                            print(f"✅ 抓到了! Variational: {price}")
+                    except:
+                        pass
+
+            # 开启监听
+            page.on("response", handle_response)
+
+            # 打开网页 (可能会稍微慢点，因为要加载JS)
+            try:
+                page.goto("https://omni.variational.io/perpetual/BTC", timeout=60000)
+                # 等待 15 秒，让网页加载数据
+                page.wait_for_timeout(15000)
+            except Exception as e:
+                print(f"⚠️ 网页加载超时，但可能已经抓到数据了: {e}")
+
+            browser.close()
             
-        data = resp.json()
-        if 'mark_price' in data:
-            price = float(data['mark_price'])
-            print(f"✅ Variational 获取成功: {price}")
-            return price
-        else:
-            print(f"⚠️ Variational 数据异常: {str(data)[:100]}")
-            return None
     except Exception as e:
-        print(f"❌ Variational 出错: {e}")
-        return None
+        print(f"❌ 浏览器报错: {e}")
+
+    return price
 
 def main():
-    print("=== 🚀 终极修正版 (指纹+Header) ===")
+    print("=== 🚀 启动爬虫版监控 ===")
     p_nado = get_nado_price()
     p_var = get_variational_price()
     
     if p_nado and p_var:
-        diff = p_nado - p_var
-        abs_diff = abs(diff)
-        print(f"📉 价差: {abs_diff:.2f}")
-        
-        if abs_diff > ALERT_DIFF:
-            msg = f"价差{abs_diff:.1f} (N:{p_nado:.0f}, V:{p_var:.0f})"
-            send_alert(msg)
+        diff = abs(p_nado - p_var)
+        print(f"📉 价差: {diff:.2f}")
+        if diff > ALERT_DIFF:
+            send_bark(f"价差{diff:.1f}_N{p_nado:.0f}_V{p_var:.0f}")
     else:
-        print("❌ 依然有失败项，请检查日志")
+        print("❌ 失败")
 
 if __name__ == "__main__":
     main()
