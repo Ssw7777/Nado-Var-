@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests
-          pip install cloudscraper
+          pip install curl_cffi
           
       - name: Run Monitor Script
         run: python main.py
